@@ -22,19 +22,32 @@ recurfmt:"IISFPPPPIIFIISSFFSS";
 uausefmt:"IIPPS*S*SSS*SIIPIPII";
 valuefmt:"IIIP*";
 
+// bn: basename
+/ chop off dirs, extension, and version number from the back
+/ of a data file path
+/ x file handle eg `:data/organization2.csv
+/ return C eg "organization"
+bn:{
+  f:first` vs last` vs x; / base file name (still has version #)
+  / drop consecutive digits from the back of f
+  reverse{_[;x]sum(and\)10>.Q.n?x}reverse string f}
+
 // lf: load fast helper
 / uses pre-calculated format strings stored in globals
 / whose names are based on the table name
-/ x table name
+/ x file handle e.g., `:data/organization.csv
 / creates the table in the global namespace
 lf:{
-  f:value(5 sublist string x),"fmt";
-  x set trimstr fixnullstr fixnullsym(f;(),",")0:`$":",string[x],"2.csv"}
+  t:`$bn x;                          / table name
+  f:value(5 sublist string t),"fmt"; / get format string from global
+  t set trimstr fixnullstr fixnullsym(f;(),",")0:x}
 
 // lastfast: load the 7 original tables using their format strings
+/ x optional directory containing the csv files
 loadfast:{
-  t:`organization`project`rcpt`rcptitem`recurring`uauser`value_outcome;
-  lf each t;
+/ t:`organization`project`rcpt`rcptitem`recurring`uauser`value_outcome;
+  t:`organization2`project2`rcpt2`rcptitem2`recurring2`uauser2`value_outcome2;
+  lf each` sv/:hsym[$[null x;`.;x]],/:` sv/:t,\:`csv;
   }
 
 // val: add val column (and line_item_id and volume_bucket_id) to rcptitem
@@ -83,5 +96,21 @@ summary:{
       `num_donations`direct_frac`disaster_frac`open_challenge_frac;
     0f^]}
 
-/ q)loadfast[]
+donations:{
+  ()xkey select sum amount*quantity by projid, creatdt from rcptitem}
+
+/ count how many projects received funds in particular currencies
+/ select n:count i by currency_code from currcounts[]
+currcounts:{
+  1_()xkey / drop null projid
+    select `#asc distinct currency_code
+      by projid from
+        (select rcptid, currency_code from rcpt)
+          lj
+        `rcptid xkey select rcptid, projid, amount, quantity from rcptitem}
+
+/ q)loadfast`data / dir containing the rnq'd data files
+/ q)tables`.
+/ `organization`project`rcpt`rcptitem`recurring`uauser`value_outcome
+/ q)d:donations[]
 / q)s:summary[]

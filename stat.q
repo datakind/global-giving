@@ -21,6 +21,13 @@ nc:{
   p:100*k[1]%count x;                              / % of table row count
   `nulls xdesc delete from flip`column`nulls`pct!k,enlist p where 0=nulls}
 
+// a2: add version number 2 to data file name
+/ helper for rnq
+/ x file handle eg `:data/organization.csv
+/ return eg `:data/organization2.csv
+a2:{
+  ` sv{@[x;-1+count x;{` sv@[` vs x;0;{`$string[x],"2"}]}]}` vs x}
+
 // rnq: remove newlines inside quoted fields so q can read it
 / x file handle, e.g., `:project.csv
 / saves fixed-up data to, e.g., `:project2.csv
@@ -30,7 +37,7 @@ rnq:{
   / only put newlines when eoln coincides with even quote total
   d:raze@[p;where 0=sums[r]mod 2;,;"\n"];
   / must drop last newline since 0: will put one
-  (`$"."sv@["."vs string x;0;,;"2"])0:enlist -1_d}
+  a2[x]0:enlist -1_d}
 
 // fmt: format string for table
 / x table
