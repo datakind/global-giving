@@ -28,16 +28,20 @@ nc:{
 a2:{
   ` sv{@[x;-1+count x;{` sv@[` vs x;0;{`$string[x],"2"}]}]}` vs x}
 
-// rnq: remove newlines inside quoted fields so q can read it
-/ x file handle, e.g., `:project.csv
-/ saves fixed-up data to, e.g., `:project2.csv
-rnq:{
+// rnqi: rnq implementation
+/ broke apart to enable more effective garbage collection
+rnqi:{
   p:read0 x;
   r:1=(sum each"\""=p)mod 2; / lines with an odd number of quotes
   / only put newlines when eoln coincides with even quote total
   d:raze@[p;where 0=sums[r]mod 2;,;"\n"];
   / must drop last newline since 0: will put one
   a2[x]0:enlist -1_d}
+
+// rnq: remove newlines inside quoted fields so q can read it
+/ x file handle, e.g., `:project.csv
+/ saves fixed-up data to, e.g., `:project2.csv
+rnq:{r:rnqi x;.Q.gc[];r} / rnq leaves memory on the table
 
 // fmt: format string for table
 / x table

@@ -47,8 +47,7 @@ lf:{
 loadfast:{
 / t:`organization`project`rcpt`rcptitem`recurring`uauser`value_outcome;
   t:`organization2`project2`rcpt2`rcptitem2`recurring2`uauser2`value_outcome2;
-  lf each` sv/:hsym[$[null x;`.;x]],/:` sv/:t,\:`csv;
-  }
+  lf each` sv/:hsym[$[null x;`.;x]],/:` sv/:t,\:`csv}
 
 // val: add val column (and line_item_id and volume_bucket_id) to rcptitem
 / focus on only funded and retired projects
@@ -109,7 +108,15 @@ currcounts:{
           lj
         `rcptid xkey select rcptid, projid, amount, quantity from rcptitem}
 
-/ q)loadfast`data / dir containing the rnq'd data files
+// addkeys: define foreign key relationships so we can use dot notation
+/ for simple joins
+addkeys:{
+  / delete the dangling projids from rcptitem
+  delete from `rcptitem where not projid in exec distinct projid from project;
+  `projid xkey`project;
+  update projid:`project$projid}
+
+/ q)loadfast`:data / dir containing the rnq'd data files
 / q)tables`.
 / `organization`project`rcpt`rcptitem`recurring`uauser`value_outcome
 / q)d:donations[]
