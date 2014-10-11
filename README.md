@@ -32,12 +32,23 @@ repaired, csv file with the number 2 added to the each file's name
 q)rnq each{` sv/:x,/:{x where x like"*.csv"}key x}`:data
 `:data/organization2.csv`:data/project2.csv`:data/rcpt2.csv`:data/rcptitem2.c..
 
-5) Load the raw data into q using the loadfast function.  loadfast
+5) Load the raw data into q using the load2 function.  loadfast
 takes a single parameter: the directory where the <name>2.csv files
-are.  loadfast returns a list of the names of the tables it created.
+are.  load2 returns a list of the names of the tables it created.
 
-q)loadfast`:data / a slash preceded by whitespace starts a line comment
+q)load2`:data / a slash preceded by whitespace starts a line comment
 `organization`project`rcpt`rcptitem`recurring`uauser`value_outcome
+
+5.b) Save the tables in kdb format for faster loading next time:
+
+q)savefast`:data
+`:data/organization`:data/project`:data/rcpt`:data/rcptitem`:data/recurring`:..
+
+Next you start q, you can use loadfast (which takes about 6 seconds on
+my macbook to load everything):
+
+q)\ts loadfast`:data / \ts gives time (ms) and size (bytes) for an operation
+6097 1224506816
 
 6) Examine the raw data:
 

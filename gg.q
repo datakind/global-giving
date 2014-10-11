@@ -6,7 +6,7 @@
 
 // loadall: obsolete
 / uses lt to load all *2.csv files found in the current directory
-/ not needed anymore since we have format strings; use loadfast instead.
+/ not needed anymore since we have format strings; use load2 instead.
 loadall:{
   f:{x where x like"*2.csv"}key`:.; / data files in pwd
   t:`$.[;(::;0)]"."vs/:string f;    / derive table names
@@ -42,12 +42,24 @@ lf:{
   f:value(5 sublist string t),"fmt"; / get format string from global
   t set trimstr fixnullstr fixnullsym(f;(),",")0:x}
 
-// lastfast: load the 7 original tables using their format strings
+// load2: load the 7 original tables using their format strings
+/ assumes the files have been processed by rnq and have 2 in the name
 / x optional directory containing the csv files
-loadfast:{
+load2:{
 / t:`organization`project`rcpt`rcptitem`recurring`uauser`value_outcome;
   t:`organization2`project2`rcpt2`rcptitem2`recurring2`uauser2`value_outcome2;
   lf each` sv/:hsym[$[null x;`.;x]],/:` sv/:t,\:`csv}
+
+// loadfast: load the tables in kdb format
+/ they must have been previously saved in kdb format using savefast.
+/ x optional dir to find table files in kdb format
+loadfast:{
+ load each` sv/:hsym[x],/:{x where not x like"*.*"}key hsym x}
+
+// savefast: save all the tables current in memory in kdb format
+/ x optional dir to save the files in
+savefast:{
+  x{(` sv hsym[x],y)set value y}/:tables`}
 
 // val: add val column (and line_item_id and volume_bucket_id) to rcptitem
 / focus on only funded and retired projects
@@ -109,12 +121,14 @@ currcounts:{
         `rcptid xkey select rcptid, projid, amount, quantity from rcptitem}
 
 // addkeys: define foreign key relationships so we can use dot notation
-/ for simple joins
+/ for simple joins, eg
+/ ()xkey select val:sum amount*quantity by projid,`month$creatdt
+/    from rcptitem where projid.status in`funded`retired
 addkeys:{
   / delete the dangling projids from rcptitem
   delete from `rcptitem where not projid in exec distinct projid from project;
   `projid xkey`project;
-  update projid:`project$projid}
+  update projid:`project$projid from `rcptitem}
 
 / q)loadfast`:data / dir containing the rnq'd data files
 / q)tables`.
