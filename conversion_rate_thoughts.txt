@@ -1,0 +1,72 @@
+The cr function in gg.q gives the #donations per visit and the dollars
+per visit (over all time) by project:
+
+q)crate:cr[]
+q)crate
+projid donations amount   visits cr       dpv     
+--------------------------------------------------
+7658   347       54446    1      347      54446   
+4489   250       67311.52 1      250      67311.52
+10504  222       85850    1      222      85850   
+9856   177       5049     1      177      5049    
+12663  325       40204.74 2      162.5    20102.37
+12855  123       18121.94 1      123      18121.94
+1448   350       38924    3      116.6667 12974.67
+8330   100       18274.39 1      100      18274.39
+10358  100       9958     1      100      9958
+..
+
+The rows with the highest conversion ratios suggest that visits are
+related very weakly - if at all - to donations.  Sorting descending by
+the number of donations is somewhat more encouraging:
+
+q)`donations xdesc crate
+projid donations amount   visits cr         dpv      
+-----------------------------------------------------
+6443   42538     4098458  109925 0.3869729  37.28413 
+2150   23887     231221.7 17128  1.394617   13.49963 
+4561   14293     18153.09 623    22.94222   29.13819 
+554    13044     -1171406 1735   7.518156   -675.1618
+15104  11277     347858.9 16095  0.7006524  21.61285 
+7107   9229      305700.6 1454   6.347318   210.248
+
+The crd function attempts to identify donations that occurred during a
+visit by matching on date.  As before, looking at the highest cr rows
+seems to be highlighting some other phenomenon, but sorting descending
+by donations is more interesting:
+
+q)crated:crd[]
+q)crated
+projid date       donations amount   visits cr   dpv     
+---------------------------------------------------------
+8039   2011.12.31 179       19498.28 1      179  19498.28
+13824  2013.05.03 159       2250     1      159  2250    
+13735  2013.04.23 152       1680     1      152  1680    
+15537  2013.11.30 129       4659.72  1      129  4659.72 
+8581   2013.12.19 120       9765     1      120  9765    
+5933   2014.06.05 113       2780     1      113  2780    
+7067   2011.12.06 104       4500     1      104  4500    
+8959   2013.09.26 93        1415     1      93   1415    
+..
+q)`donations xdesc crated
+projid date       donations amount   visits cr         dpv      
+----------------------------------------------------------------
+15104  2013.11.14 1709      159039   1678   1.018474   94.7789  
+15104  2013.11.15 1455      133427.5 1037   1.403086   128.6668 
+8811   2011.12.16 1288      16788    176    7.318182   95.38636 
+15104  2013.11.13 1075      89932    1555   0.6913183  57.83408 
+15104  2013.11.11 1010      81597    2414   0.4183927  33.80157 
+8811   2011.12.17 973       25910    197    4.939086   131.5228
+..
+
+It may also be interesting to look at donations related to visits that
+occurred within some time window (rather than on the same day) using
+q's aj or wj functions.  For example,
+
+q)q:aj[`projid`date;dbd`USD;`projid`date xasc select sum visits,page:last dimension_value by projid:reference_id, date:start_date from goog]
+q)select from q where projid=7658,0<visits
+projid date       donations amount visits page                               ..
+-----------------------------------------------------------------------------..
+7658   2011.12.19 2         1000   1      "/projects/bowl-for-kids-sake-2011/..
+7658   2012.02.15 1         50     1      "/projects/bowl-for-kids-sake-2011/..
+q)
