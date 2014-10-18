@@ -15,17 +15,18 @@ loadall:{
 / format strings for the 7 original raw files (with quoted newlines removed)
 / Started with output of 'fmt lt tab' and then tweaked by hand.
 / MAYBE: F -> E and P -> D to save memory
-googafmt:"ISIPPSDDS*IIIFFIIIIIIFIIIIII";
+googfmt:"ISIPPSDDS*IIIEEIIIIIIEIIIIII";
 organfmt:"ISPP*****SS*S***IIIIPIPSS";
-projefmt:"ISSIPP******S*****SSS*S*SSFPF*********PPPSIFIFIIIIPI";
-rcptfmt:"IFFPIISISIISIIIII**SIFF**II";
-rcptifmt:"IIFIIISIII**I*****IIIISPIF";
-recurfmt:"IISFPPPPIIFIISSFFSS";
+projefmt:"ISSIPP******S*****SSS*S*SSEPE*********PPPSIEIEIIIIPI";
+rcptfmt:"IEEPIISISIISIIIII**SIEE**II";
+rcptifmt:"IIEIIISIII**I*****IIIISPIE";
+recurfmt:"IISEPPPPIIEIISSEESS";
+recurfmt:"IISEIISSBPPS";
 uausefmt:"IIPPS*S*SSS*SIIPIPII";
 valuefmt:"IIIP*";
 
 / projectNumbericalSummary.csv format
-pnsfmt:"I*SSFSPPPFFFFFFFFF"; / upper{@[x;where"C"=x;:;"*"]}exec t from meta s;
+pnsfmt:"I*SSESPPPEEEEEEEEE"; / upper{@[x;where"C"=x;:;"*"]}exec t from meta s;
 / obsolete
 / NB: don't name a column type! q doesn't like it
 / pns:@[;`num_donations;`int$]@[;`projtitle;trim]`projid`projtitle`ptype xcol lt`projectNumericalSummary;
@@ -55,7 +56,7 @@ lf:{
 / x optional directory containing the csv files
 load2:{
 / t:`organization`project`rcpt`rcptitem`recurring`uauser`value_outcome;
-  t:`organization2`project2`rcpt2`rcptitem2`recurring2`uauser2`value_outcome2;
+  t:`goog`organization2`project2`rcpt2`rcptitem2`recurring2`uauser2`value_outcome2;
   lf each` sv/:hsym[$[null x;`.;x]],/:` sv/:t,\:`csv}
 
 // loadfast: load the tables in kdb format
@@ -145,24 +146,45 @@ currcounts:{
 / ()xkey select val:sum amount*quantity by projid,`month$creatdt
 /    from rcptitem where projid.status in`funded`retired
 addkeys:{
-  / delete the dangling projids from rcptitem
-  delete from `rcptitem where not projid in exec distinct projid from project;
-  `projid xkey`project;
-  update projid:`project$projid from `rcptitem;
-  `id xkey`organization;
-  update organization_id:`organization$organization_id from `project;
-  update organization_id:`organization$organization_id from `rcptitem;
-  delete from `rcptitem where not rcptid in exec rcptid from rcpt;
-  `rcptid xkey `rcpt;
-  update rcptid:`rcpt$rcptid from `rcptitem;
-  `uauserid xkey `uauser;
-  update uauserid:`uauser$uauserid from `rcpt;
-  update projid:`project$projid from `value_outcome;
-  update uauserid:`uauser$uauserid from `recurring;
+  / key target tables
+  `id`projid`rcptid`recurringid`uauserid xkey'
+    `organization`project`rcpt`recurring`uauser;
+
+  / delete the dangling fkeys and then make the links
   delete from `goog where not reference_id in
     exec distinct projid from project;
   update projid:`project$reference_id from `goog;
+
+  update organization_id:`organization$organization_id from `project;
+  update uauserid:`uauser$uauserid from `rcpt;
+
+  delete from `rcptitem where
+    (not projid in exec distinct projid from project)|
+    not rcptid in exec distinct rcptid from rcpt;
+  update organization_id:`organization$organization_id,
+         projid:`project$projid,
+         rcptid:`rcpt$rcptid
+    from `rcptitem;
+
+  update uauserid:`uauser$uauserid from `recurring;
+
+  delete from `recurringitem where
+    (not projid in exec projid from project)|
+    not recurringid in exec recurringid from recurring;
+  update organization_id:`organization$organization_id,
+         projid:`project$projid,
+         recurringid:`recurring$recurringid
+    from `recurringitem;
+
+  update projid:`project$projid from `value_outcome;
   }
+
+// roll: roll-up recurring items in rcptitem
+roll:{
+  select
+    from (update sum quantity by recurringitemid
+            from rcptitem where recurringitemid>0)
+    where (recurringitemid<=0) or i=(first;i)fby recurringitemid}
 
 // dbd: donations by projid,date
 / x s optional currency eg `USD
@@ -195,7 +217,7 @@ crd:{
               by projid:reference_id, date:start_date
               from goog)
       where not null visits;
-  `cr xdesc update cr:donations%visits,dpv:amount%visits from t where 0<visits}
+  update cr:donations%visits,dpv:amount%visits from t where 0<visits}
 
 // cr: conversion rates by projid
 cr:{
@@ -218,3 +240,81 @@ cr:{
 / q)select sum visits by projid,start_date from goog
 / q)crated:crd[] / by projid and date
 / q)crate:cr[]  / ignoring dates
+
+prep:{
+  loadfast`data;
+  rawsummary::summary[];
+  rcptitem:roll_rcptitem;
+  delete roll_rcptitem from `.;
+  addkeys[];
+  rollsummary::summary[];
+  / uastatus => real user
+  donor::select from uauser
+           where uastatus=1,
+                 uauserid in exec distinct uauserid from rcpt;
+  .Q.gc[];
+  }
+
+////////////////////////////////////////////////////////////////////////
+/ Success histogram
+success:{
+  `n xdesc
+    update h:(`int$100*n)#\:"*" from
+      select n:sum[total_raised>projamt]%count i
+        by projthemeid
+        from summary[]
+        where status=`funded}
+
+////////////////////////////////////////////////////////////////////////
+/ Words in project titles, summaries, ...
+
+// wtp: words to project row numbers
+/ works like group but one level deeper
+/ x list of list of C
+/ takes a few seconds
+/ TODO: handle punctuation better
+/       reduce words to stems
+/       count punctuation marks as distinct words?
+wtp:{
+  if[`i in key`.;
+     '"wtp overwrites global var i, but i is already defined"];
+
+  w:({x where x in .Q.a,"-"}'')lower" "vs/:x; / words in each element of x
+
+  i::0; / gross but I haven't found a better way to append row #s
+  f:(enlist[""]!enlist(),-1){x@[;;,;-1+i+::1]/y}/w; / words!projrows
+  delete i from `.;
+
+  (!).(key f;value f)@\:where not key[f]in / remove uninteresting words
+    ("";(),"&";(),"-";(),"a";"an";"and";"are";"as";"at";
+     "be";"but";"by";"for";"from";
+     "in";"is";"it";"of";"on";"or";
+     "that";"the";"their";"this";"to";
+     "was";"which";"will";"with")}
+
+// word ratios table
+/ x output of wtp
+wrt:{
+  p:(exec status from project)x;
+  t:([]word   :key p;
+       funded :sum each`funded=value p;
+       retired:sum each`retired=value p;
+       total  :count each value p);
+  `pct2 xdesc update pct:funded%funded+retired,pct2:funded%total from t
+    where 0<retired}
+
+/ q)wpt:wtp exec projtitle from project
+/ q)rat:wrt wpt
+/ q)select from rat where 0<retired
+/ q)`funded xdesc rat
+/ q)wps:wtp exec projsummary from project
+/ q)srat:wrt sp
+/ q)select from srat where 0<retired
+/ q)`funded xdesc srat
+/ q)wpn:wtp exec projneed from project / etc
+
+////////////////////////////////////////////////////////////////////////
+// value outcome impact
+
+// select distinct amount by projid from value_outcome
+// `projid xasc `n xdesc select n:sum quantity by projid, amount from rcptitem
