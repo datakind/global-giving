@@ -1,3 +1,6 @@
+// (c) DataKind
+// written by Nate McNamara
+
 \l stat.q
 
 ////////////////////////////////////////////////////////////////////////
@@ -16,6 +19,7 @@ loadall:{
 / Started with output of 'fmt lt tab' and then tweaked by hand.
 / MAYBE: F -> E and P -> D to save memory
 googfmt:"ISIPPSDDS*IIIEEIIIIIIEIIIIII";
+line_fmt:"ISBIEEESI";
 organfmt:"ISPP*****SS*S***IIIIPIPSS";
 projefmt:"ISSIPP******S*****SSS*S*SSEPE*********PPPSIEIEIIIIPI";
 rcptfmt:"IEEPIISISIISIIIII**SIEE**II";
@@ -23,6 +27,7 @@ rcptifmt:"IIEIIISIII**I*****IIIISPIE";
 recurfmt:"IISEPPPPIIEIISSEESS";
 recurfmt:"IISEIISSBPPS";
 uausefmt:"IIPPS*S*SSS*SIIPIPII";
+usmbpfmt:"IMEEEIIE";
 valuefmt:"IIIP*";
 
 / projectNumbericalSummary.csv format
@@ -147,8 +152,8 @@ currcounts:{
 /    from rcptitem where projid.status in`funded`retired
 addkeys:{
   / key target tables
-  `id`projid`rcptid`recurringid`uauserid xkey'
-    `organization`project`rcpt`recurring`uauser;
+  `id`id`projid`rcptid`recurringid`uauserid xkey'
+    `line_item`organization`project`rcpt`recurring`uauser;
 
   / delete the dangling fkeys and then make the links
   delete from `goog where not reference_id in
@@ -156,7 +161,9 @@ addkeys:{
   update projid:`project$reference_id from `goog;
 
   update organization_id:`organization$organization_id from `project;
-  update uauserid:`uauser$uauserid from `rcpt;
+  update line_item_id:`line_item$line_item_id,
+         uauserid:`uauser$uauserid
+    from `rcpt;
 
   delete from `rcptitem where
     (not projid in exec distinct projid from project)|
@@ -256,6 +263,24 @@ prep:{
   }
 
 ////////////////////////////////////////////////////////////////////////
+// monthly donations and visitors/pageviews
+// conversion_rate does not connect visits directly to donations,
+// it's a straight donations/visitors
+make_usmbp:{
+  update conversion_rate:(donations-refunds)%visitors from
+    (select donations:sum 0<amount,
+            refunds  :sum 0>amount,
+            raised   :sum amount*quantity
+       by projid, month:`month$creatdt
+       from rcptitem)
+      lj
+    select sum pageviews, sum visitors
+      by projid:reference_id,
+         month:`month$start_date
+      from goog}
+
+
+////////////////////////////////////////////////////////////////////////
 / Success histogram
 success:{
   `n xdesc
@@ -308,13 +333,156 @@ wrt:{
 / q)select from rat where 0<retired
 / q)`funded xdesc rat
 / q)wps:wtp exec projsummary from project
-/ q)srat:wrt sp
-/ q)select from srat where 0<retired
-/ q)`funded xdesc srat
+/ q)ras:wrt wps
+/ q)select from ras where 0<retired
+/ q)`funded xdesc ras
 / q)wpn:wtp exec projneed from project / etc
+/ q)ran:wrt wpn
+/ q)p:(select projid,projtitle,projsummary,projneed from project) lj `projid xkey select projid,total_raised,projamt from pns
+/ q)a:desc avg each({(x-y)%y}. p`total_raised`projamt)wpt
+/ q)b:desc avg each({(x-y)%y}. p`total_raised`projamt)wps
+/ q)c:desc avg each({(x-y)%y}. p`total_raised`projamt)wpn
 
 ////////////////////////////////////////////////////////////////////////
 // value outcome impact
 
 // select distinct amount by projid from value_outcome
 // `projid xasc `n xdesc select n:sum quantity by projid, amount from rcptitem
+
+// what % are chosen from value_outcome options given?
+// exec sum[amount in'vo]%count i from rcptitem lj select distinct vo:`real$amount by projid from value_outcome
+// Exclude projects that don't offer value_outcome options
+// exec sum[amount in'vo]%count i from (select projid,amount from rcptitem where projid in exec distinct projid from value_outcome) lj select distinct vo:`real$amount by projid from value_outcome
+
+// Can we say anything about donations whose amounts are not value_outcome amounts?
+// `amount xasc{select from x where 10<=amount,not amount in'vo}(select projid,amount from rcptitem where projid in exec distinct projid from value_outcome) lj select distinct vo:`real$amount by projid from value_outcome
+// select count i by bucket from update bucket:100 xbar`int$100*pct from update pct:amount%vo from update avg each vo from `amount xasc{select from x where 10<=amount,not amount in'vo}(select projid,amount from rcptitem where projid.status in`funded`retired,projid in exec distinct projid from value_outcome) lj select distinct vo:`real$amount by projid from value_outcome
+
+// Does the min suggested donation have an impact?
+// `pct_raised xdesc(select pct_raised:sum[amount*quantity]%first projid.projamt by projid from rcptitem where projid in(exec distinct projid from value_outcome),projid.status in`funded`retired)lj select mvo:min amount by projid from value_outcome
+mvo_raised:{
+  mvo:select mvo:min amount by projid from value_outcome;
+  pr:select pct_raised:sum[amount*quantity]%first projid.projamt
+       by projid
+       from rcptitem
+       where projid.status in`funded`retired,
+             projid in exec distinct projid from value_outcome;
+  p:()xkey select avg pct_raised by mvo from pr lj mvo;
+  // causes wsfull ?!  update h:(`int$100%pct_raised)#\:"*" from p
+  flip(!).((key;value)@\:flip p),'(`h;enlist(`int$100*p`pct_raised)#\:"*")}
+
+// Are donors scared by large value_outcome amounts?
+// try summing amounts of all bullets
+svo_raised:{
+  svo:select svo:sum amount by projid from value_outcome;
+  pr:select pct_raised:sum[amount*quantity]%first projid.projamt
+       by projid
+       from rcptitem
+       where projid.status in`funded`retired,
+             projid in exec distinct projid from value_outcome;
+  p:()xkey select avg pct_raised by svo from pr lj svo;
+  // causes wsfull ?!  update h:(`int$100%pct_raised)#\:"*" from p
+  flip(!).((key;value)@\:flip p),'(`h;enlist(`int$100*p`pct_raised)#\:"*")}
+
+// Difference in sum of value_outcome amounts between winners and losers?
+// pr:select win:signum -.7+sum[amount*quantity]%first projid.projamt by projid from rcptitem where projid.status in`funded`retired,projid in exec distinct projid from value_outcome
+// select avg[amount],dev amount by win from pr lj select sum amount by projid from value_outcome
+// select avg[amount],dev amount by win from pr lj select sum 3 sublist desc amount by projid from value_outcome
+
+bigvo:{
+  pr:select first projid.projthemeid,
+            win:1=signum -.7+sum[amount*quantity]%first projid.projamt
+       by projid
+       from rcptitem
+       where projid.status=`funded,
+             projid in exec distinct projid from value_outcome;
+  select winbig:sum[win&bigvo]%count i,
+         winsma:sum[win&not bigvo]%count i,
+         losbig:sum[(not win)&bigvo]%count i,
+         lossma:sum[(not win)&not bigvo]%count i,
+         n:count i
+    by projthemeid
+    from pr lj select bigvo:any 2500<=amount by projid from value_outcome}
+
+// Do projects with high projamt values also have high value_outcome amounts?
+// `sumbullets xdesc (select sumbullets:sum amount by projid from value_outcome where projid.status=`funded)lj`projid xkey select projid,projamt,total_raised from pns
+
+// how many projects have a given # of value outcomes
+// `n xdesc update h:(`int$log projid)#\:"*" from select count projid by n from select n:count i by projid from value_outcome
+
+// select avgpct:avg pct, medpct:med pct,minpct:min pct, maxpct:max pct by hasvo from select pct:total_raised%projamt,hasvo:projid in (exec distinct projid from value_outcome) from pns
+
+////////////////////////////////////////////////////////////////////////
+// Time series
+// patterns by
+//    project duration: (`date$projid.deactivateDate)-`date$(first;creatdt)fby projid from rcptitem
+//    project location
+//    organization location
+//    projthemeid?
+// select donations:sum 0<raised,refunds:sum 0>raised,sum raised by projid,month from update month:(`month$creatdt)-`month$first creatdt by projid from `projid`creatdt xasc select projid,creatdt,raised:amount*quantity from rcptitem where projid.status in`funded
+//
+// dq:{select from x where 0<=durq}select durq:first div[;3](`month$projid.deactivateDate)-`month$first creatdt by projid from rcptitem;
+// select sum amount*quantity by durq from (select from rcptitem where projid.status=`funded)lj dq
+//
+// a:`projid`creatdt xasc select projid,creatdt,raised:amount*quantity from rcptitem where projid.status in`funded;
+// b:update durm:(`month$projid.deactivateDate)-`month$first creatdt,month:(`month$creatdt)-`month$first creatdt by projid from a;
+// c:select first durm,first creatdt,donations:sum 0<raised,refunds:sum 0>raised,sum raised by projid,month from b;
+// update h:(`int$.00001*raised)#\:"*" from select sum donations,sum refunds,sum raised by month from c where 12>=durm
+// update h:(`int$.00001*raised)#\:"*" from select sum donations,sum refunds,sum raised by month from c where durm within 13 24
+// update h:(`int$.00001*raised)#\:"*" from select sum donations,sum refunds,sum raised by month from c where durm>=25
+//
+// p:update pct_raised:{min 1,x}each raised%sum raised by projid from c;
+// q:select from p where 0<=(`month$projid.deactivateDate)-`month$creatdt;
+// r:update durq:div[;3](`month$projid.deactivateDate)-`month$(first;creatdt)fby projid from q
+// x:select sum donations,sum refunds,sum raised by durq,month from r;
+// select sum donations,sum refunds,sum raised by projid.projthemeid,month from p
+// dur_quarters:div[;3](`month$projid.deactivateDate)-`month$creatdt
+
+
+
+// How many users donated to each project
+// `n xdesc select n:count distinct rcptid.uauserid by projid from rcptitem
+
+// How many users donate to multiple campaigns?
+// exec count distinct rcptid.uauserid from rcptitem
+// => 509793
+// exec sum usercount from (select usercount:count uauserid by projcount:n from select n:count distinct projid by rcptid.uauserid from rcptitem)where 1<projcount
+// => 71048
+// update h:(`int$log usercount)#\:"*" from select usercount:count uauserid by projcount:n from select n:count distinct projid by rcptid.uauserid from rcptitem
+// update h:(`int$log usercount)#\:"*" from select usercount:count uauserid by projcount:5 xbar n from select n:count distinct projid by rcptid.uauserid from rcptitem
+
+// Time series CDF of first month
+// p:select sum amount*quantity by projid,payday:(`date$creatdt)-`date$projid.createdt from rcptitem
+// update h:(`int$.00005*amount)#\:"*" from select sum amount by payday from p where payday within 0 30
+
+// Deciles of projects: what % of goal to the top 10% achieve etc
+// update h:(`int$20*pct)#\:"*" from ([]decile:til 10;pct:avg each 10 0N#exec asc amount from select from (select sum[amount*quantity]%first projid.projamt by projid from rcptitem)where not null amount,0<=amount)
+
+
+
+////////////////////////////////////////////////////////////////////////
+// funding rate: total raised divided by duration (deactivateDate-approvedt)
+//
+frate:{
+  `funding_rate xdesc
+    update funding_rate:raised%days,
+           funding     :raised%projamt
+      from {delete from x where 0>=days}
+        (select projid,
+                days:(`date$deactivateDate)-`date$approveddt,
+                projamt
+           from project)
+          lj
+        select raised:sum amount*quantity by projid from rcptitem}
+
+fmrate:{
+  `funding_rate xdesc
+    update funding_rate:raised%months,
+           funding     :raised%projamt
+      from {delete from x where 0>=months}
+        (select projid,
+                months:(`month$deactivateDate)-`month$approveddt,
+                projamt
+           from project)
+          lj
+        select raised:sum amount*quantity by projid from rcptitem}
