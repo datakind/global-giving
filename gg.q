@@ -279,13 +279,18 @@ make_usmbp:{
          month:`month$start_date
       from goog}
 
+winners:{
+  a:select avg conversion_rate by projid from select from usmbp where not null visitors;
+  p:(`conversion_rate xdesc a)lj project;
+  select projid,conversion_rate,projthemeid,projtitle from p where status=`funded}
+
 
 ////////////////////////////////////////////////////////////////////////
 / Success histogram
 success:{
   `n xdesc
     update h:(`int$100*n)#\:"*" from
-      select n:sum[total_raised>projamt]%count i
+      select n:sum[total_raised>=.7*projamt]%count i
         by projthemeid
         from summary[]
         where status=`funded}
@@ -426,17 +431,31 @@ bigvo:{
 //
 // a:`projid`creatdt xasc select projid,creatdt,raised:amount*quantity from rcptitem where projid.status in`funded;
 // b:update durm:(`month$projid.deactivateDate)-`month$first creatdt,month:(`month$creatdt)-`month$first creatdt by projid from a;
-// c:select first durm,first creatdt,donations:sum 0<raised,refunds:sum 0>raised,sum raised by projid,month from b;
-// update h:(`int$.00001*raised)#\:"*" from select sum donations,sum refunds,sum raised by month from c where 12>=durm
-// update h:(`int$.00001*raised)#\:"*" from select sum donations,sum refunds,sum raised by month from c where durm within 13 24
-// update h:(`int$.00001*raised)#\:"*" from select sum donations,sum refunds,sum raised by month from c where durm>=25
+// c:select first durm,first creatdt,donations:sum 0<raised,refunds:sum 0>raised,sum raised by projid,month from b where durm>=0;
 //
-// p:update pct_raised:{min 1,x}each raised%sum raised by projid from c;
-// q:select from p where 0<=(`month$projid.deactivateDate)-`month$creatdt;
-// r:update durq:div[;3](`month$projid.deactivateDate)-`month$(first;creatdt)fby projid from q
-// x:select sum donations,sum refunds,sum raised by durq,month from r;
-// select sum donations,sum refunds,sum raised by projid.projthemeid,month from p
-// dur_quarters:div[;3](`month$projid.deactivateDate)-`month$creatdt
+// Grouping by year doesn't show anything
+// update h:(0|`int$.05*raised)#\:"*" from select avg donations,avg refunds,avg raised by month from c where 12>=durm
+// update h:(0|`int$.05*raised)#\:"*" from select avg donations,avg refunds,avg raised by month from c where durm within 13 24
+// update h:(0|`int$.05*raised)#\:"*" from select avg donations,avg refunds,avg raised by month from c where durm>=25
+//
+// All together suggests a downward trend as time goes by overlaid with
+// spikes (e.g., durm=8 and durm=30) // due to major disaster campaigns
+// update h:(0|`int$.05*raised)#\:"*" from select avg raised by durm from c
+//
+// Doing proportions by campaign duration shows a clear, strong, downward trend:
+// most money is raised in the first several weeks regardless of how long the campaign is.
+// Long projects do often see a bump on their anniversaries.
+// rack:ungroup select month:til first durm,durm,donations:0i,refunds:0i,raised:0e by projid from c;
+// p:select from c where 0<=(`month$projid.deactivateDate)-`month$creatdt;
+// q:update pct_raised:{min 1,x}each raised%sum raised by projid from rack lj keys[p]xkey cols[rack]#()xkey p;
+// x:update h:(0|`int$200*pct_raised)#\:"*" from select avg pct_raised by durm,month from q
+//
+// By quarters
+// y:update h:(0|`int$200*pct_raised)#\:"*" from select avg pct_raised by durq:durm div 3,quarter:month div 3 from q
+//
+// By projthemeid - note anomaly in health at 30 months; warrants investigation?
+// update h:(`int$.0005*raised)#\:"*" from select sum donations,sum refunds,sum raised by projid.projthemeid,month from p
+
 
 
 
