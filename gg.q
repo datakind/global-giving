@@ -279,10 +279,26 @@ make_usmbp:{
          month:`month$start_date
       from goog}
 
-winners:{
-  a:select avg conversion_rate by projid from select from usmbp where not null visitors;
-  p:(`conversion_rate xdesc a)lj project;
-  select projid,conversion_rate,projthemeid,projtitle from p where status=`funded}
+// ocr: overall conversion-rate
+/ limited to projects whose first check arrived after we start collecting goog data
+ocr:{
+  // projects with goog data
+  p:exec distinct projid from rcptitem where
+      projid.status=`funded,
+      (exec first start_date from goog)<=(first;creatdt)fby projid;
+  r:update pct_raised:raised%projamt from
+      select donations:sum 0<amount,
+             refunds  :sum 0>amount,
+             projamt  :first projid.projamt,
+             raised   :sum amount*quantity
+        by projid
+        from rcptitem
+        where projid in p;
+  a:()xkey update conversion_rate:(donations-refunds)%visitors from
+      r lj select sum visitors by projid:reference_id from goog;
+  `projid`conversion_rate`visitors xcols
+    (`conversion_rate xdesc a) lj
+      `projid xkey select projid,projthemeid,projtitle from project}
 
 
 ////////////////////////////////////////////////////////////////////////
