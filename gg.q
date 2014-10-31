@@ -27,6 +27,7 @@ rcptifmt:"IIEIIISIII**I*****IIIISPIE";
 recurfmt:"IISEPPPPIIEIISSEESS";
 recurfmt:"IISEIISSBPPS";
 uausefmt:"IIPPS*S*SSS*SIIPIPII";
+usdbpfmt:"IDEEE";
 usmbpfmt:"IMEEEIIE";
 valuefmt:"IIIP*";
 
@@ -173,6 +174,11 @@ addkeys:{
          rcptid:`rcpt$rcptid
     from `rcptitem;
 
+  delete from `roll_rcptitem where
+    (not projid in exec distinct projid from project)|
+    not rcptid in exec distinct rcptid from rcpt;
+  update projid:`project$projid from `roll_rcptitem;
+
   update uauserid:`uauser$uauserid from `recurring;
 
   delete from `recurringitem where
@@ -205,7 +211,18 @@ dbd:{
         by projid, date:`date$creatdt
         from rcptitem
         where currency_code=x]}
-                    
+
+dbm:{
+  ()xkey
+    $[null x;
+      select donations:sum signum amount,sum amount*quantity
+        by projid, month:`month$creatdt
+        from rcptitem;
+      select donations:sum signum amount,sum amount*quantity
+        by projid, month:`month$creatdt
+        from rcptitem
+        where currency_code=x]}
+
 // dbp: donations by projid
 / x s optional currency eg `USD
 dbp:{
@@ -216,18 +233,28 @@ dbp:{
     select donations:sum signum amount,sum amount*quantity
       by projid from rcptitem where currency_code=x]}
 
-// crd: conversion rates by projid,date
-crd:{
+// crbpd: conversion rates by projid,date
+crbpd:{
   t:select
       from (dbd[`USD] lj
-            select from select sum visits
+            select sum visits
               by projid:reference_id, date:start_date
               from goog)
       where not null visits;
   update cr:donations%visits,dpv:amount%visits from t where 0<visits}
 
-// cr: conversion rates by projid
-cr:{
+// crbpm: conversion rates by projid,month
+crbpm:{
+  t:select
+      from (dbm[`USD] lj
+            select sum visits
+              by projid:reference_id, month:`month$start_date
+              from goog)
+      where not null visits;
+  update cr:donations%visits,dpv:amount%visits from t where 0<visits}
+
+// crbp: conversion rates by projid
+crbp:{
   t:select
      from (dbp[`USD] lj
            select sum visits by projid:reference_id from goog)
@@ -250,11 +277,8 @@ cr:{
 
 prep:{
   loadfast`data;
-  rawsummary::summary[];
-  rcptitem:roll_rcptitem;
-  delete roll_rcptitem from `.;
+  summary::summary[];
   addkeys[];
-  rollsummary::summary[];
   / uastatus => real user
   donor::select from uauser
            where uastatus=1,
@@ -279,9 +303,47 @@ make_usmbp:{
          month:`month$start_date
       from goog}
 
+// jcr: Jon's conversion rate
+jcr:{
+  pd:select sum visits by projid,date:start_date from goog where visits>0;
+  q:pd lj
+           select donations:sum 0<amount,
+                  refunds  :sum 0>amount,
+                  projamt  :first projid.projamt,
+                  raised   :sum amount*quantity
+             by projid, date:`date$creatdt
+             from roll_rcptitem;
+  r:select sum visits, sum donations, sum refunds, first projamt, sum raised
+      by projid from q;
+  a:()xkey update conversion_rate:(donations-refunds)%visits,
+                  pct_raised     :raised%projamt
+             from r;
+  `projid`conversion_rate`visits xcols
+    (`conversion_rate xdesc a) lj
+      `projid xkey select projid,projthemeid,projtitle from project}
+  
 // ocr: overall conversion-rate
-/ limited to projects whose first check arrived after we start collecting goog data
 ocr:{
+  // projects with goog data
+  p:(exec distinct projid from rcptitem)inter exec distinct projid from goog;
+  r:update pct_raised:raised%projamt from
+      select donations:sum 0<amount,
+             refunds  :sum 0>amount,
+             projamt  :first projid.projamt,
+             raised   :sum amount*quantity
+        by projid
+        from roll_rcptitem
+        where projid in p;
+  a:()xkey update conversion_rate:(donations-refunds)%visitors from
+      r lj select sum visitors by projid:reference_id from goog;
+  `projid`conversion_rate`visitors xcols
+    (`conversion_rate xdesc a) lj
+      `projid xkey select projid,projthemeid,projtitle from project}
+
+// ocrf overall conversion rate restricted to
+/    projid.status=`funded
+/    projects whose first check arrived after we start collecting goog data
+ocrf:{
   // projects with goog data
   p:exec distinct projid from rcptitem where
       projid.status=`funded,
@@ -292,14 +354,13 @@ ocr:{
              projamt  :first projid.projamt,
              raised   :sum amount*quantity
         by projid
-        from rcptitem
+        from roll_rcptitem
         where projid in p;
   a:()xkey update conversion_rate:(donations-refunds)%visitors from
       r lj select sum visitors by projid:reference_id from goog;
   `projid`conversion_rate`visitors xcols
     (`conversion_rate xdesc a) lj
       `projid xkey select projid,projthemeid,projtitle from project}
-
 
 ////////////////////////////////////////////////////////////////////////
 / Success histogram
