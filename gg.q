@@ -305,7 +305,9 @@ make_usmbp:{
 
 // jcr: Jon's conversion rate
 jcr:{
-  pd:select sum visits by projid,date:start_date from goog where visits>0;
+  pd:select sum visits, sum visitors, sum bounces
+       by projid, date:start_date
+       from goog where visits>0;
   q:pd lj
            select donations:sum 0<amount,
                   refunds  :sum 0>amount,
@@ -313,14 +315,17 @@ jcr:{
                   raised   :sum amount*quantity
              by projid, date:`date$creatdt
              from roll_rcptitem;
-  r:select sum visits, sum donations, sum refunds, first projamt, sum raised
+  r:select sum visits, sum visitors, sum bounces,
+           sum donations, sum refunds, first projamt, sum raised
       by projid from q;
-  a:()xkey update conversion_rate:(donations-refunds)%visits,
-                  pct_raised     :raised%projamt
-             from r;
-  `projid`conversion_rate`visits xcols
-    (`conversion_rate xdesc a) lj
+  a:()xkey update dpvisits  :(donations-refunds)%visits,
+                  dpvisitors:(donations-refunds)%visitors,
+                  pct_raised:raised%projamt
+             from select from r; // where 0<=donations-refunds;
+  `projid`dpvisits`dpvisitors`visits xcols
+    (`dpvisits xdesc a) lj
       `projid xkey select projid,projthemeid,projtitle from project}
+// update cr:.2*cr,h:(`int$.1*n)#\:"*" from select n:count i by cr:`int$5*10 xlog dpvisits from jcr[] where dpvisits>0,10<donations
   
 // ocr: overall conversion-rate
 ocr:{
