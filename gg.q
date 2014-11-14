@@ -27,7 +27,7 @@ rcptifmt:"IIEIIISIII**I*****IIIISPIE";
 recurfmt:"IISEPPPPIIEIISSEESS";
 recurfmt:"IISEIISSBPPS";
 uausefmt:"IIPPS*S*SSS*SIIPIPII";
-usdbpfmt:"IDEEE";
+usdbpfmt:"IPEEE";
 usmbpfmt:"IMEEEIIE";
 valuefmt:"IIIP*";
 
@@ -124,18 +124,41 @@ summary:{
       `direct_frac`disaster_frac`open_challenge_frac;
     0f^]}
 
-// don: donations and total by projid,date
-/ x s optional currency
-don:{
+// ustsdbp: attempt to replicate Jon's us_timeseries_donations_byProject.csv
+/ donations and total by projid,date:creatdt
+/ note that date is really a timestamp
+ustsdbp:{
   ()xkey
-    $[null x;
-      select n:sum signum amount, sum amount*quantity
-        by projid, date:creatdt
-        from rcptitem;
-      select n:sum signum amount, sum amount*quantity
-        by projid, date:creatdt
-        from rcptitem
-        where currency_code=x]}
+    select donated  :sum amount*quantity,
+           donations:sum 0<amount,
+           refunds  :sum 0>amount
+      by projid, date:creatdt
+      from rcptitem
+      where currency_code=`USD}
+
+// ustsdbp2: attempt to replicate Jon's us_timeseries_donations_byProject.csv
+/ as of his new code since 11/7/14
+/ donated,donations,refunds,pageviews,visitors by projid,date
+ustsdbp2:{
+  update conversion_rate:donations%visitors from
+      (()xkey
+         select donated  :sum amount*quantity,
+                donations:sum 0<amount,
+                refunds  :sum 0>amount
+           by projid, date:`date$creatdt
+           from rcptitem
+           where currency_code=`USD, recurringitemid<=0)
+    lj
+      select sum pageviews, sum visitors
+        by projid:reference_id, date:start_date
+        from goog}
+/ ts:ustsdbp2[]
+/ x:update conversion_rate:?[0>=visitors;0f;(donations-refunds)%visitors] from ()xkey select sum donated,sum donations,sum refunds,sum pageviews,sum visitors by projid,month:`month$date from ts
+/ y:flip@[;exec c from meta x where t in"ief";0^]cols[x]!"imeiiiif"$value flip("IMEEEEEF";(),",")0:`$":jon/repo/opportunity-analysis/conversionRateStudy/us_timeseries_monthly_donations_byProject.csv"
+/ The latest code excludes rows with no visitors
+/ sub:select from ts where 0<visitors
+/ m:()xkey select sum donations,sum refunds,sum pageviews,sum visitors by projid,month:`month$date from sub
+/ mcr:update conversion_rate:(donations-refunds)%visitors from m
 
 / count how many projects received funds in particular currencies
 / select n:count i by currency_code from currcounts[]
@@ -204,12 +227,16 @@ roll:{
 dbd:{
   ()xkey
     $[null x;
-      select donations:sum signum amount,sum amount*quantity
+      select total_donated  :sum amount*quantity,
+             total_donations:sum 0<amount,
+             total_refunds  :sum 0>amount
         by projid, date:`date$creatdt
-        from rcptitem;
-      select donations:sum signum amount,sum amount*quantity
+        from roll_rcptitem;
+      select total_donated  :sum amount*quantity,
+             total_donations:sum 0<amount,
+             total_refunds  :sum 0>amount
         by projid, date:`date$creatdt
-        from rcptitem
+        from roll_rcptitem
         where currency_code=x]}
 
 dbm:{
@@ -587,3 +614,6 @@ fmrate:{
            from project)
           lj
         select raised:sum amount*quantity by projid from rcptitem}
+
+// TODO: write bins function
+// natural jinks clustering
