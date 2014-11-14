@@ -75,19 +75,11 @@ two tables simpler to write:
 
 q)delete from `rcptitem where not projid in exec distinct projid from project / delete the dangling projids from rcptitem
 q)`projid xkey `project       / key project by projid
-q)update projid:`project$projid from `rcptitem / create the foreign key in rcptitem
+q)update projid:`project$projid from `rcptitem / make rcptitem.projid a foreign key to project.projid
 
 Here's how to compute the total donated to funded and retired projects
 each month:
 
-q)5#()xkey select val:sum amount*quantity by projid,`month$creatdt from rcptitem where projid.status in`funded`retired
-projid creatdt                       val
--------------------------------------------
-2      2003.12.31D00:00:00.000000000 589.51
-2      2004.01.30D00:00:00.000000000 1156
-2      2004.05.21D00:00:00.000000000 120
-2      2004.06.15D00:00:00.000000000 25
-2      2004.07.01D00:00:00.000000000 40
 q)5#()xkey select val:sum amount*quantity by projid,`month$creatdt from rcptitem where projid.status in`funded`retired
 projid creatdt val
 ---------------------
