@@ -330,30 +330,73 @@ make_usmbp:{
          month:`month$start_date
       from goog}
 
-// jcr: Jon's conversion rate
-jcr:{
-  pd:select sum visits, sum visitors, sum bounces
-       by projid, date:start_date
-       from goog where visits>0;
-  q:pd lj
-           select donations:sum 0<amount,
-                  refunds  :sum 0>amount,
-                  projamt  :first projid.projamt,
-                  raised   :sum amount*quantity
-             by projid, date:`date$creatdt
-             from roll_rcptitem;
-  r:select sum visits, sum visitors, sum bounces,
-           sum donations, sum refunds, first projamt, sum raised
-      by projid from q;
-  a:()xkey update dpvisits  :(donations-refunds)%visits,
-                  dpvisitors:(donations-refunds)%visitors,
-                  pct_raised:raised%projamt
-             from select from r; // where 0<=donations-refunds;
-  `projid`dpvisits`dpvisitors`visits xcols
-    (`dpvisits xdesc a) lj
-      `projid xkey select projid,projthemeid,projtitle from project}
-// update cr:.2*cr,h:(`int$.1*n)#\:"*" from select n:count i by cr:`int$5*10 xlog dpvisits from jcr[] where dpvisits>0,10<donations
+// vbpd: visitors (and visits etc) by projid,date
+/ We have 2,456,780 rows with visitors, but only 1,595,543 with visits (!?)
+/ All rows with 0<visits have 0<visitors,
+/   but we have 188,404 rows with 0<visits<visitors
+vbpd:{
+  select sum visitors, sum visits, sum bounces, sum pageviews
+    by projid:reference_id, date:start_date
+    from goog where 0<visits}
+
+// dbpd: donations (and refunds and [total] raised) by projid,date
+/ x s optional currency
+dbpd:{
+  $[null x;
+    select donations:sum 0<amount,
+           refunds  :sum 0>amount,
+           raised   :sum amount*quantity
+      by projid, date:`date$creatdt
+      from roll rcptitem;
+    select donations:sum 0<amount,
+           refunds  :sum 0>amount,
+           raised   :sum amount*quantity
+      by projid, date:`date$creatdt
+      from roll[rcptitem] where currency_code=x]}
+
+// vdbp: visitors and donations by projid
+/ x s optional currency
+vdbp:{
+  {delete from x where donations<refunds}
+    select sum visitors, sum visits, sum bounces, sum pageviews,
+            sum donations, sum refunds, sum raised
+       by projid
+       from vbpd[] lj dbpd x}
+
+// vdbpm: visitors and donations by projid,month
+/ x s optional currency
+vdbpm:{
+  {delete from x where ((sum;donations)fby projid)<(sum;refunds)fby projid}
+    select sum visitors, sum visits, sum bounces, sum pageviews,
+           sum donations, sum refunds, sum raised
+       by projid, month:`month$date
+       from vbpd[] lj dbpd x}
+
+// pcr: project conversion rate
+/ Only includes donations in USD
+pcr:{
+  cr:update dpvisitor :(donations-refunds)%visitors,
+            dpvisit   :(donations-refunds)%visits,
+            mpvisitor :raised%visitors,
+            mpvisit   :raised%visits,
+            pct_raised:raised%projamt
+       from 0!vdbp[`USD] lj
+            1!select projid,projamt,projthemeid,projtitle from project;
+  (`projid`dpvisitor`dpvisit`mpvisitor`mpvisit`visitors`visits`bounces,
+     `pageviews`donations`refunds`raised`projamt`pct_raised)
+    xcols `dpvisit xdesc cr}
+// update cr:.2*cr,h:(`int$.1*n)#\:"*" from select n:count i by cr:`int$5*10 xlog dpvisit from pcr[] where dpvisit>0,10<donations
   
+// pcrbm: project conversion rate by month
+/ Only includes donations in USD
+pcrbm:{
+  crbm:update dpvisitor:(donations-refunds)%visitors,
+              dpvisit  :(donations-refunds)%visits,
+              mpvisitor:raised%visitors,
+              mpvisit  :raised%visits
+         from ()xkey vdbpm`USD;
+  `projid`month`dpvisitor`dpvisit`mpvisitor`mpvisit xcols crbm}
+
 // ocr: overall conversion-rate
 ocr:{
   // projects with goog data
